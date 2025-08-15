@@ -6,7 +6,7 @@ export default function LandingPage() {
       {/* The change is in the line below */}
       <div className="max-w-2xl bg-slate-800/80 bg-opacity-30 rounded-md p-8">
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-white mb-6">
-          Create Your custon Sponebob time cards
+          Create Your custon Spongebob time cards
         </h1>
         <p className="text-lg md:text-xl text-gray-300 mb-10">
           Customise the text and choose bacground image to generate a classic
