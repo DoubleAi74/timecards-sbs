@@ -3,7 +3,8 @@ import Link from "next/link";
 export default function LandingPage() {
   return (
     <main className="flex flex-col items-center justify-center min-h-screen text-center p-8 bg-[url('/background.jpg')] bg-cover bg-center bg-no-repeat">
-      <div className="max-w-2xl bg-black bg-opacity-50 rounded-xl p-8">
+      {/* The change is in the line below */}
+      <div className="max-w-2xl bg-slate-800/80 bg-opacity-30 rounded-md p-8">
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-white mb-6">
           Create Your custon Sponebob time cards
         </h1>
