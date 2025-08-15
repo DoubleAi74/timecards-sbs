@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import localFont from "next/font/local";
 // FIX: Rename the imported component to avoid conflict with the native Image() constructor
 import NextImage from "next/image";
@@ -21,11 +21,11 @@ const Kbd = ({ children }) => (
 
 export default function GeneratorPage() {
   // State management for all controls
-  const [overlayText, setOverlayText] = useState("A few moments later...");
-  const [textColor, setTextColor] = useState("#2b65ff");
-  const [shadowColor, setShadowColor] = useState("#ffd82e");
+  const [overlayText, setOverlayText] = useState("A few moments\n later...");
+  const [textColor, setTextColor] = useState("#EDE607");
+  const [shadowColor, setShadowColor] = useState("#C723C2");
   const [aspectRatio, setAspectRatio] = useState("9:16");
-  const [textSize, setTextSize] = useState(96);
+  const [textSize, setTextSize] = useState(130);
   const [downloadUrl, setDownloadUrl] = useState("");
   const [status, setStatus] = useState("idle"); // idle, generating-audio, rendering-video, ready
 
@@ -50,7 +50,7 @@ export default function GeneratorPage() {
     "4:3": { w: 4, h: 3, res: [1600, 1200] },
   };
 
-  const drawFrame = () => {
+  const drawFrame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -113,9 +113,15 @@ export default function GeneratorPage() {
         ctx.fillText(line, canvas.width / 2, y);
       });
     }
-  };
+  }, [
+    overlayText,
+    textColor,
+    shadowColor,
+    textSize,
+    spongebobFont.style.fontFamily,
+  ]);
 
-  const fitImageToCover = () => {
+  const fitImageToCover = useCallback(() => {
     const img = imageRef.current;
     const canvas = canvasRef.current;
     if (!img || !img.complete || !canvas) return;
@@ -145,7 +151,7 @@ export default function GeneratorPage() {
     );
 
     drawFrame();
-  };
+  }, [drawFrame]);
 
   const resetView = () => {
     viewRef.current = { ...viewRef.current, scale: 1, offsetX: 0, offsetY: 0 };
@@ -381,7 +387,7 @@ export default function GeneratorPage() {
       window.removeEventListener("mousemove", onMouseMove);
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, []); // Empty dependency array means this effect runs once on mount
+  }, [fitImageToCover]); // Empty dependency array means this effect runs once on mount
 
   // Keyboard shortcut for reset
   useEffect(() => {
@@ -396,6 +402,25 @@ export default function GeneratorPage() {
     { length: 60 },
     (_, i) => `/presets/preset-${i + 1}.jpg`
   );
+
+  // <<< START: NEW CODE ADDED >>>
+  // useEffect to set the default background image on initial load
+  useEffect(() => {
+    // Check if there are any preset images to avoid errors
+    if (presetImages.length > 0) {
+      // Use the existing function to load the first preset image
+      handleImageLoad(presetImages[35]);
+      // Set the state for the selected thumbnail to highlight the first one
+      setSelectedThumb(0);
+    }
+    // The empty dependency array [] ensures this effect runs only once
+    // after the component has mounted for the first time.
+    // NOTE: We disable the exhaustive-deps linting rule here because we
+    // intentionally want this to run only once, and the functions it calls
+    // are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // <<< END: NEW CODE ADDED >>>
 
   const getButtonState = () => {
     switch (status) {
@@ -415,7 +440,7 @@ export default function GeneratorPage() {
     <div className={`${spongebobFont.variable} font-sans`}>
       <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-800 bg-[#0b1022aa] px-3 sm:px-5 py-4 backdrop-blur-md">
         <h1 className="text-lg sm:text-xl font-bold tracking-wide">
-          Image + Text-to-Speech ➜ Video
+          Generate a timecard video with text-to-speech audio
         </h1>
         <div className="hidden sm:flex items-center gap-2 text-custom-muted text-xs">
           Pan: <Kbd>drag</Kbd> · Zoom: <Kbd>wheel</Kbd> · Reset: <Kbd>R</Kbd>
@@ -427,7 +452,9 @@ export default function GeneratorPage() {
         <section className="flex flex-col items-center gap-3 rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d] p-4 shadow-2xl">
           {/* File Upload */}
           <div className="w-full">
-            <label className="text-xs text-custom-muted">1) Upload image</label>
+            <label className="text-xs text-custom-muted">
+              Upload image (optional)
+            </label>
             <input
               type="file"
               accept="image/*"
@@ -438,9 +465,7 @@ export default function GeneratorPage() {
 
           {/* Text Input */}
           <div className="w-full">
-            <label className="text-xs text-custom-muted">
-              2) Overlay Text & Speech (Enter for line breaks)
-            </label>
+            <label className="text-xs text-custom-muted">Edit the text</label>
             <textarea
               value={overlayText}
               onChange={(e) => setOverlayText(e.target.value)}
