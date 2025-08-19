@@ -16,6 +16,9 @@ module.exports = {
         "custom-accent-2": "#60a5fa",
         "custom-warn": "#f59e0b",
       },
+      fontFamily: {
+        myont: ["var(--font-spongebob)"],
+      },
     },
   },
   plugins: [],

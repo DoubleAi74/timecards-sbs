@@ -674,7 +674,7 @@ export default function GeneratorPage() {
       case "idle":
       default:
         return {
-          text: "▶️ Generate Video",
+          text: "▶  Generate Video",
           disabled: false,
           onClick: generateVideo,
         };
@@ -690,8 +690,10 @@ export default function GeneratorPage() {
   const ar = ASPECT_RATIOS[aspectRatio];
 
   return (
-    <div className={`${spongebobFont.variable} font-sans`}>
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-800 bg-[#0b1022aa] px-3 sm:px-5 py-4 backdrop-blur-md">
+    <div
+      className={`${spongebobFont.variable} font-sans bg-[url('/back2.jpg')]`}
+    >
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-800 bg-[#0b1022aa] px-3 sm:px-5 py-4 backdrop-blur-md font-extrabold">
         <h1 className="text-lg sm:text-xl font-bold tracking-wide text-yellow-100">
           <span style={{ fontSize: "1.5em" }}>Timecard . </span>
           <span style={{ fontSize: "1.5em" }}>S</span>
@@ -706,9 +708,9 @@ export default function GeneratorPage() {
         </div>
       </header>
 
-      <main className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 p-4">
+      <main className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 p-4  ">
         {/* ---------- Controls Panel ---------- */}
-        <section className="flex flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d] p-4 shadow-2xl">
+        <section className="flex flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d]/85 p-4 shadow-2xl">
           {/* Text Input */}
           <div className="w-full">
             <label className="text-xs text-custom-muted">
@@ -993,7 +995,7 @@ export default function GeneratorPage() {
           )}
         </section>
         {/* ---------- Preview Panel ---------- */}
-        <section className="flex flex-col items-center rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d] p-4 shadow-2xl">
+        <section className="flex flex-col items-center rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d]/85 p-4 shadow-2xl">
           <div className="relative flex items-center justify-center w-full h-[clamp(360px,80vh,720px)] overflow-hidden">
             <div
               className={`${
@@ -1045,7 +1047,7 @@ export default function GeneratorPage() {
       </main>
 
       {/* ---------- Thumbnails Panel ---------- */}
-      <section className="mx-4 mb-4 rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d] p-4 shadow-2xl">
+      <section className="mx-4 mb-4 rounded-2xl border border-slate-800 bg-gradient-to-b from-[#0b1222] to-[#0b0f1d]/85 p-4 shadow-2xl">
         <h2 className="mb-4 text-sm font-semibold text-custom-muted">
           Choose a background
         </h2>
