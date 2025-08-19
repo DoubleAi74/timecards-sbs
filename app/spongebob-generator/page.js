@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import localFont from "next/font/local";
-// FIX: Rename the imported component to avoid conflict with the native Image() constructor
 import NextImage from "next/image";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile } from "@ffmpeg/util";
 
 // Load the custom font
 const spongebobFont = localFont({
@@ -12,7 +13,7 @@ const spongebobFont = localFont({
   variable: "--font-spongebob",
 });
 
-// Component for a styled keyboard key
+// Styled keyboard key
 const Kbd = ({ children }) => (
   <span className="py-0.5 px-1.5 border border-slate-700 bg-slate-900 border-b-2 rounded-md text-sm">
     {children}
@@ -20,16 +21,20 @@ const Kbd = ({ children }) => (
 );
 
 export default function GeneratorPage() {
-  // State management for all controls
+  // UI state
   const [overlayText, setOverlayText] = useState("A few moments\n later...");
   const [textColor, setTextColor] = useState("#EDE607");
   const [shadowColor, setShadowColor] = useState("#C723C2");
   const [aspectRatio, setAspectRatio] = useState("9:16");
   const [textSize, setTextSize] = useState(130);
   const [downloadUrl, setDownloadUrl] = useState("");
-  const [status, setStatus] = useState("idle"); // idle, generating-audio, rendering-video, ready
+  const [status, setStatus] = useState("idle"); // idle | generating-audio | recording | transcoding | ready
 
-  // Refs for canvas and image manipulation
+  // Preview toggle: live canvas vs rendered video
+  const [showVideoPreview, setShowVideoPreview] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  // Canvas & image manipulation
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
   const viewRef = useRef({
@@ -44,6 +49,10 @@ export default function GeneratorPage() {
   });
   const [selectedThumb, setSelectedThumb] = useState(null);
 
+  // Reusable FFmpeg instance
+  const ffmpegRef = useRef(null);
+
+  // Aspect ratios & fixed output resolutions
   const ASPECT_RATIOS = {
     "16:9": { w: 16, h: 9, res: [1920, 1080] },
     "9:16": { w: 9, h: 16, res: [1080, 1920] },
@@ -77,6 +86,7 @@ export default function GeneratorPage() {
       ctx.drawImage(img, -img.width / 2, -img.height / 2);
       ctx.restore();
     } else {
+      // light grid placeholder
       const s = 40;
       ctx.strokeStyle = "#1f2937";
       for (let x = 0; x < canvas.width; x += s) {
@@ -130,7 +140,7 @@ export default function GeneratorPage() {
       canvas.width / img.width,
       canvas.height / img.height
     );
-    viewRef.current.minScale = 1; // Reset min scale
+    viewRef.current.minScale = 1;
 
     const scale = fitScale * viewRef.current.scale;
     const imgW = img.width * scale;
@@ -159,7 +169,6 @@ export default function GeneratorPage() {
   };
 
   const handleImageLoad = (url) => {
-    // FIX: This now correctly refers to the native browser Image constructor
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = url;
@@ -178,19 +187,41 @@ export default function GeneratorPage() {
     }
   };
 
-  const handleThumbClick = (url, index) => {
-    handleImageLoad(url);
-    setSelectedThumb(index);
+  // FFmpeg: lazy load & reuse (new class API)
+  const getFFmpeg = async () => {
+    if (!ffmpegRef.current) {
+      const ffmpeg = new FFmpeg(); // you can pass { coreURL } if needed
+      await ffmpeg.load();
+      ffmpegRef.current = ffmpeg;
+    }
+    return ffmpegRef.current;
   };
 
-  const randomizeColors = () => {
-    const randHex = () =>
-      "#" +
-      Math.floor(Math.random() * 16777215)
-        .toString(16)
-        .padStart(6, "0");
-    setTextColor(randHex());
-    setShadowColor(randHex());
+  const transcodeWebmToMp4 = async (webmBlob) => {
+    setStatus("transcoding");
+    const ffmpeg = await getFFmpeg();
+    await ffmpeg.writeFile("in.webm", await fetchFile(webmBlob));
+    await ffmpeg.exec([
+      "-i",
+      "in.webm",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-pix_fmt",
+      "yuv420p",
+      "-r",
+      "30",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-movflags",
+      "+faststart",
+      "out.mp4",
+    ]);
+    const out = await ffmpeg.readFile("out.mp4"); // Uint8Array
+    return new Blob([out], { type: "video/mp4" });
   };
 
   const generateVideo = async () => {
@@ -211,11 +242,13 @@ export default function GeneratorPage() {
       return;
     }
 
-    setStatus("generating-audio");
+    setShowVideoPreview(false);
+    setPreviewUrl("");
     setDownloadUrl("");
+    setStatus("generating-audio");
 
     try {
-      // 1. Get Audio from ElevenLabs
+      // 1) Get Audio (MP3) from ElevenLabs
       const singleLineText = overlayText.replace(/\n/g, " ");
       const response = await fetch(
         "https://api.elevenlabs.io/v1/text-to-speech/bEO1KL2a6EuyUqmMnd8o",
@@ -235,16 +268,18 @@ export default function GeneratorPage() {
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData?.detail?.message || `API Error: ${response.status}`
-        );
+        let errorMsg = `API Error: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData?.detail?.message || errorMsg;
+        } catch {}
+        throw new Error(errorMsg);
       }
       const audioBlob = await response.blob();
-      setStatus("rendering-video");
 
-      // 2. Prepare for recording
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // 2) Build media graph
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const audioCtx = new AudioCtx();
       const audioBuffer = await audioCtx.decodeAudioData(
         await audioBlob.arrayBuffer()
       );
@@ -254,18 +289,49 @@ export default function GeneratorPage() {
       const destination = audioCtx.createMediaStreamDestination();
       audioSource.connect(destination);
 
+      // Ensure canvas uses selected resolution
       const canvas = canvasRef.current;
+      const ar = ASPECT_RATIOS[aspectRatio];
+      canvas.width = ar.res[0];
+      canvas.height = ar.res[1];
+
+      setStatus("recording");
+
       const canvasStream = canvas.captureStream(30);
       destination.stream
         .getAudioTracks()
         .forEach((track) => canvasStream.addTrack(track));
 
-      const mimeType = "video/webm;codecs=vp9,opus";
+      // Prefer MP4 if supported by MediaRecorder; otherwise WebM
+      // Prefer MP4 if supported by MediaRecorder; otherwise WebM
+      const MP4 = "video/mp4;codecs=avc1.42E01E,mp4a.40.2"; // A more specific MP4 mimeType
+      const WEBM = "video/webm;codecs=vp9,opus";
+      let mimeType = "";
+
+      if (
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported(MP4)
+      ) {
+        mimeType = MP4;
+      } else if (
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported(WEBM)
+      ) {
+        // This will likely be the path for non-Safari browsers
+        mimeType = WEBM;
+      } else {
+        alert("Video recording is not supported on your browser.");
+        setStatus("idle");
+        return;
+      }
+
+      const canRecordMp4 = mimeType === MP4;
+
       const rec = new MediaRecorder(canvasStream, { mimeType });
       const chunks = [];
       rec.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
 
-      // 3. Start recording
+      // Draw loop during recording
       let recording = true;
       const loop = () => {
         if (recording) {
@@ -273,43 +339,64 @@ export default function GeneratorPage() {
           requestAnimationFrame(loop);
         }
       };
-      loop();
 
       rec.start();
+      loop();
       audioSource.start();
 
       await new Promise((resolve) => (audioSource.onended = resolve));
-
-      // 4. Stop recording and create blob
       recording = false;
       rec.stop();
-      audioCtx.close();
 
-      const videoBlob = await new Promise((resolve) => {
-        rec.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
+      await new Promise((resolve) => {
+        rec.onstop = resolve;
       });
 
-      const url = URL.createObjectURL(videoBlob);
+      audioCtx.close();
+
+      const recordedBlob = new Blob(chunks, { type: mimeType });
+
+      // 3) Ensure MP4 in all cases
+      let finalMp4;
+      if (canRecordMp4) {
+        finalMp4 = recordedBlob; // already MP4
+      } else {
+        finalMp4 = await transcodeWebmToMp4(recordedBlob);
+      }
+
+      const url = URL.createObjectURL(finalMp4);
       setDownloadUrl(url);
+      setPreviewUrl(url);
       setStatus("ready");
+      setShowVideoPreview(true); // auto-switch to video preview
     } catch (err) {
-      alert("An error occurred: " + err.message);
       console.error(err);
+      alert("An error occurred: " + (err?.message || err));
       setStatus("idle");
     }
   };
 
+  // Aspect ratio -> resize canvas & refit
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ar = ASPECT_RATIOS[aspectRatio];
     canvas.width = ar.res[0];
     canvas.height = ar.res[1];
     fitImageToCover();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspectRatio]);
 
-  useEffect(drawFrame, [overlayText, textColor, shadowColor, textSize]);
+  // Redraw on text / color changes
+  useEffect(drawFrame, [
+    overlayText,
+    textColor,
+    shadowColor,
+    textSize,
+    drawFrame,
+  ]);
 
-  // Pan and zoom event listeners
+  // Pan & zoom handlers
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -387,7 +474,7 @@ export default function GeneratorPage() {
       window.removeEventListener("mousemove", onMouseMove);
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, [fitImageToCover]); // Empty dependency array means this effect runs once on mount
+  }, [fitImageToCover]);
 
   // Keyboard shortcut for reset
   useEffect(() => {
@@ -398,36 +485,29 @@ export default function GeneratorPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Default image on load (preset #36)
   const presetImages = Array.from(
     { length: 60 },
     (_, i) => `/presets/preset-${i + 1}.jpg`
   );
-
-  // <<< START: NEW CODE ADDED >>>
-  // useEffect to set the default background image on initial load
   useEffect(() => {
-    // Check if there are any preset images to avoid errors
     if (presetImages.length > 0) {
-      // Use the existing function to load the first preset image
       handleImageLoad(presetImages[35]);
-      // Set the state for the selected thumbnail to highlight the first one
-      setSelectedThumb(0);
+      setSelectedThumb(35); // highlight the one we loaded
     }
-    // The empty dependency array [] ensures this effect runs only once
-    // after the component has mounted for the first time.
-    // NOTE: We disable the exhaustive-deps linting rule here because we
-    // intentionally want this to run only once, and the functions it calls
-    // are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // <<< END: NEW CODE ADDED >>>
 
   const getButtonState = () => {
     switch (status) {
       case "generating-audio":
         return { text: "Generating Audio...", disabled: true };
-      case "rendering-video":
-        return { text: "Rendering Video...", disabled: true };
+      case "recording":
+        return { text: "Recording Video...", disabled: true };
+      case "transcoding":
+        return { text: "Transcoding to MP4...", disabled: true };
+      case "ready":
+      case "idle":
       default:
         return { text: "▶️ Generate Video", disabled: false };
     }
@@ -537,7 +617,7 @@ export default function GeneratorPage() {
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Actions */}
           <div className="flex flex-wrap items-center justify-between gap-2 mt-2 w-full">
             <button
               onClick={generateVideo}
@@ -546,9 +626,18 @@ export default function GeneratorPage() {
             >
               {buttonText}
             </button>
+
             <div className="flex gap-2">
               <button
-                onClick={randomizeColors}
+                onClick={() => {
+                  const randHex = () =>
+                    "#" +
+                    Math.floor(Math.random() * 16777215)
+                      .toString(16)
+                      .padStart(6, "0");
+                  setTextColor(randHex());
+                  setShadowColor(randHex());
+                }}
                 className="px-3 py-2 text-xs rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700"
               >
                 Randomize
@@ -559,17 +648,38 @@ export default function GeneratorPage() {
               >
                 Reset View
               </button>
+              <button
+                onClick={() => setShowVideoPreview((v) => !v)}
+                disabled={!previewUrl}
+                className="px-3 py-2 text-xs rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 disabled:opacity-50"
+                title={
+                  previewUrl
+                    ? "Toggle between canvas and video preview"
+                    : "Generate a video first"
+                }
+              >
+                {showVideoPreview ? "Show Canvas" : "Show Video"}
+              </button>
             </div>
           </div>
 
           {downloadUrl && (
             <a
               href={downloadUrl}
-              download="spongebob-timecard.webm"
+              download="spongebob-timecard.mp4"
               className="mt-2 inline-block rounded-full bg-green-800 border border-green-600 px-4 py-1 text-sm text-green-100"
             >
-              Ready: Download Video
+              Ready: Download MP4
             </a>
+          )}
+
+          {status !== "idle" && status !== "ready" && (
+            <div className="text-xs text-custom-muted mt-1">
+              {status === "generating-audio" && "Contacting TTS..."}
+              {status === "recording" && "Recording canvas + audio..."}
+              {status === "transcoding" &&
+                "Converting to MP4 (in your browser)..."}
+            </div>
           )}
         </section>
 
@@ -580,10 +690,27 @@ export default function GeneratorPage() {
               className="h-full w-auto max-w-full"
               style={{ aspectRatio: `${ar.w} / ${ar.h}` }}
             >
-              <canvas
-                ref={canvasRef}
-                className="w-full h-full rounded-lg bg-black border border-slate-800"
-              />
+              {/* Live Canvas (for composing) */}
+              {!showVideoPreview && (
+                <canvas
+                  ref={canvasRef}
+                  className="w-full h-full rounded-lg bg-black border border-slate-800"
+                />
+              )}
+
+              {/* Video Preview (after render) */}
+              {showVideoPreview && previewUrl && (
+                <video
+                  src={previewUrl}
+                  controls
+                  playsInline
+                  onEnded={(e) => {
+                    e.currentTarget.currentTime = 0; // reset to first frame
+                    // setShowVideoPreview(false);        // or switch back to canvas
+                  }}
+                  className="w-full h-full rounded-lg bg-black border border-slate-800"
+                />
+              )}
             </div>
           </div>
         </section>
@@ -601,7 +728,6 @@ export default function GeneratorPage() {
               className="relative cursor-pointer"
               onClick={() => handleThumbClick(src, i)}
             >
-              {/* FIX: Use the renamed NextImage component here */}
               <NextImage
                 src={src}
                 alt={`Preset ${i + 1}`}
@@ -620,4 +746,16 @@ export default function GeneratorPage() {
       </section>
     </div>
   );
+
+  // Handlers that need the same closure
+  function handleThumbClick(url, index) {
+    handleImageLoad(url);
+    setSelectedThumb(index);
+  }
 }
+
+// Outside component to avoid re-creation each render
+const presetImages = Array.from(
+  { length: 60 },
+  (_, i) => `/presets/preset-${i + 1}.jpg`
+);
