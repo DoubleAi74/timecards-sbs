@@ -12,7 +12,7 @@ export default function LandingPage() {
           Customise the text and choose bacground image to generate a classic
           sponebob style time card with the authentic voiceover.
         </p>
-        <Link href="/spongebob-generator">
+        <Link href="/generate">
           <span className="bg-gradient-to-r from-blue-600 to-blue-800 text-white font-bold py-4 px-10 rounded-xl text-xl hover:from-blue-700 hover:to-blue-900 transition-all duration-300 ease-in-out transform hover:scale-105">
             Get Started
           </span>
